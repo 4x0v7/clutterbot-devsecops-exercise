@@ -1,0 +1,26 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  WEBAPP_NAME: ClutterbotWebApp
+
+tasks:
+
+  default:
+    desc: List all tasks
+    cmds: [task -a]
+    silent: true
+
+  dotnet:init:
+    desc: Init a new .NET project
+    cmds:
+      - dotnet new webapp -n {{.WEBAPP_NAME}} --framework net7.0
+
+  dotnet:run:
+    desc: Run the .NET project
+    dir: '{{.WEBAPP_NAME}}'
+    vars:
+      HOST: localhost
+    cmds:
+      - dotnet run --urls=https://{{.HOST}}:5001/
