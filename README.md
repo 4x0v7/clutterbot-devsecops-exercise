@@ -129,3 +129,56 @@ task cicd:deps:install
 ```powershell
 task dotnet:build
 ```
+
+## Push the Docker image to GitHub Packages
+
+### Local configuration
+
+To push the built Docker image to GitHub Packages Container registry from a local development environment
+you will need to create a personal access token.
+
+Follow the [GitHub documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) to create a personal access token.
+
+Put the token into a text file named `github_token.txt` in the root of the repository.
+This file is is ignored by the `.gitignore` file, to prevent accidentally committing it.
+
+#### Modify the Taskfile
+
+The `dotnet:build` task in the `Taskfile.yml` has 2 configurable ENV variables to control where the built Docker image is pushed.
+
+```yaml
+LOCAL_TAR_EXPORT: false
+REGISTRY_PUBLISH: true
+```
+
+#### Configure for a local Docker daemon
+
+By default, the image is published via GitHub Actions to the Container registry on push.
+For local development, you can instead opt to export the built image as a `tar` file.
+The tar file can then be loaded into a Docker daemon.
+
+```sh
+task dotnet:build
+docker load --input image.tar
+Loaded image ID: sha256:644249ebf40a41a568fbeaeacbe81414ecd838a7f792b6c64d25a6dbf2521813
+```
+
+Once the image is loaded, tag it
+
+```sh
+docker tag sha256:644249ebf40a41a568fbeaeacbe81414ecd838a7f792b6c64d25a6dbf2521813 ghcr.io/4x0v7/clutterbot-webapp:v0.0.0
+```
+
+Confirm the image was tagged successfully
+
+```sh
+docker image ls
+REPOSITORY                         TAG       IMAGE ID       CREATED              SIZE
+ghcr.io/4x0v7/clutterbot-webapp    v0.0.0    644249ebf40a   About a minute ago   318MB
+```
+
+You can now run the image as usual
+
+```sh
+docker run -it --rm -p 5001:80 ghcr.io/4x0v7/clutterbot-webapp:v0.0.0
+```
