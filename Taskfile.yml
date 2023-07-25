@@ -36,6 +36,11 @@ tasks:
     interactive: true
     cmds:
       - dagger run pipenv run python ./pipeline.py
+    env:
+      LOCAL_TAR_EXPORT: false
+      REGISTRY_PUBLISH: true
+      GH_TOKEN_SECRET:
+        sh: cat ./github_token.txt
 
   python:fmt:
     desc: Format Python code with isort & black

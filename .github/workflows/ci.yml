@@ -6,6 +6,9 @@ jobs:
   build:
     name: dotnet-build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/setup-python@v4
         with:
@@ -23,5 +26,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install dependencies
         run: task cicd:deps:install
+      - name: Configure token
+        run: echo "${{ secrets.GITHUB_TOKEN }}" > ./github_token.txt
       - name: Run Dagger pipeline
         run: task dotnet:build
