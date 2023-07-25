@@ -1,0 +1,27 @@
+name: dagger-dotnet-ci
+on:
+  push:
+
+jobs:
+  build:
+    name: dotnet-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - uses: actions/checkout@v3
+      - uses: arduino/setup-task@v1
+      - uses: engineerd/configurator@v0.0.10
+        with:
+          name: dagger
+          pathInArchive: dagger
+          fromGitHubReleases: true
+          repo: dagger/dagger
+          version: v0.6.4
+          urlTemplate: https://github.com/dagger/dagger/releases/download/{{version}}/dagger_{{version}}_linux_amd64.tar.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: task cicd:deps:install
+      - name: Run Dagger pipeline
+        run: task dotnet:build
