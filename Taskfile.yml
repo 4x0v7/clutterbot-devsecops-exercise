@@ -24,3 +24,21 @@ tasks:
       HOST: localhost
     cmds:
       - dotnet run --urls=https://{{.HOST}}:5001/
+
+  cicd:deps:install:
+    desc: Install dependencies for CI/CD development
+    cmds:
+      - pip install --upgrade pipenv
+      - pipenv install
+
+  dotnet:build:
+    desc: Run .NET build pipeline using Dagger
+    interactive: true
+    cmds:
+      - dagger run pipenv run python ./pipeline.py
+
+  python:fmt:
+    desc: Format Python code with isort & black
+    cmds:
+      - pipenv run isort ./pipeline.py
+      - pipenv run black ./pipeline.py
