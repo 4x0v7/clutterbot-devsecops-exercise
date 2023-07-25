@@ -6,6 +6,8 @@ jobs:
   build:
     name: dotnet-build
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - uses: actions/setup-python@v4
         with:
