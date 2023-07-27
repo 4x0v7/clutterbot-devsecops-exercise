@@ -2,3 +2,10 @@ ClutterbotWebApp/bin/*
 ClutterbotWebApp/[Oo]bj/*
 ClutterbotWebApp/[Oo]ut/*
 github_token.txt
+ctr_pusher_key_b64.txt
+
+.terraform*
+!.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+tfplan

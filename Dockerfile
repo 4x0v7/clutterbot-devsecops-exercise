@@ -14,8 +14,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:7.0@sha256:b30456a5d899c34443df908982f82ffb
 WORKDIR /app
 COPY --from=build /app .
 ENTRYPOINT ["./ClutterbotWebApp"]
-EXPOSE 80
+EXPOSE 2772
 
+ENV ASPNETCORE_URLS=http://+:2772
 # TODO: enable HTTPS
 # https://stackoverflow.com/a/57109712/6480362
 # ENV ASPNETCORE_HTTPS_PORT=7146

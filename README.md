@@ -33,6 +33,31 @@
     Task version: v3.27.1 (h1:cftsoOqUo7/pCdtO7fDa4HreXKDvbrRhfhhha8bH9xc=)
     ```
 
+- Terraform
+
+    `scoop install terraform`
+
+    Confirm Terraform is installed correctly
+
+    ```powershell
+    terraform --version
+    Terraform v1.5.4
+    on windows_amd64
+    ```
+
+- vendir
+
+    `scoop install vendir`
+
+    Confirm vendir is installed correctly
+
+    ```powershell
+    vendir version
+    vendir version 0.34.3
+
+    Succeeded
+    ```
+
 ### Local CI/CD development prerequisites
 
 - Docker

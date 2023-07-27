@@ -4,6 +4,7 @@ version: '3'
 
 vars:
   WEBAPP_NAME: ClutterbotWebApp
+  WEBAPP_DEPLOYED_TAG: v0.0.1
 
 tasks:
 
@@ -25,6 +26,13 @@ tasks:
     cmds:
       - dotnet run --urls=https://{{.HOST}}:5001/
 
+  dotnet:clean:
+    desc: Clean the .NET project
+    dir: '{{.WEBAPP_NAME}}'
+    cmds:
+      - dotnet clean
+      - rm -rf ./obj && rm -rf ./bin
+
   cicd:deps:install:
     desc: Install dependencies for CI/CD development
     cmds:
@@ -32,7 +40,7 @@ tasks:
       - pipenv install
 
   dotnet:build:
-    desc: Run .NET build pipeline using Dagger
+    desc: Run .NET build and container publish pipeline using Dagger
     interactive: true
     cmds:
       - dagger run pipenv run python ./pipeline.py
@@ -41,9 +49,194 @@ tasks:
       REGISTRY_PUBLISH: true
       GH_TOKEN_SECRET:
         sh: cat ./github_token.txt
+      GLCLOUD_CTR_PUSHER_TOKEN:
+        sh: cat ./ctr_pusher_key_b64.txt
+      WEBAPP_DEPLOYED_TAG: '{{.WEBAPP_DEPLOYED_TAG}}'
 
-  python:fmt:
+  py:fmt:
     desc: Format Python code with isort & black
     cmds:
       - pipenv run isort ./pipeline.py
       - pipenv run black ./pipeline.py
+
+  tf:fmt:
+    desc: Format Terraform files
+    cmds:
+      - terraform fmt
+
+  tf:validate:
+    desc: Validate Terraform files
+    cmds:
+      - terraform validate
+      - cd ctr_registry && terraform validate
+
+  tf:init:
+    desc: Initialize Terraform working directory
+    deps:
+      - task: tf:mod:sync
+    cmds:
+      - terraform init
+
+  tf:mod:sync:
+    desc: Sync modules from git repos
+    cmds:
+      - vendir sync --tty --yes
+      - task: tf:mod:patch
+
+  tf:mod:patch:
+    desc: Patch module with Docker support
+    cmds:
+      - patch -p0 < terraform_appservice_module.patch
+
+  tf:init:registry:
+    dir: ctr_registry
+    cmds:
+      - terraform init
+
+  tf:plan:registry:
+    desc: Run terraform plan on registry
+    dir: ctr_registry
+    interactive: false
+    cmds:
+      - |
+        terraform plan
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_plan: "-input=false -out=tfplan" # https://developer.hashicorp.com/terraform/cli/config/environment-variables#tf_cli_args-and-tf_cli_args_name
+      # Doesn't work? not sure why..
+      # TF_VAR_docker_registry_password:
+      #   sh: cat ./github_token.txt
+
+
+  tf:apply:registry:
+    desc: Run terraform apply to converge state on registry
+    dir: ctr_registry
+    interactive: false
+    cmds:
+      - |
+        terraform apply "tfplan"
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_apply: "-input=false -auto-approve"
+      TF_IN_AUTOMATION: 1
+      TF_LOG_PATH: ./tf_logs.log
+
+  tf:destroy:registry:
+    desc: Run terraform destroy to DESTROY all registry intrastructure
+    dir: ctr_registry
+    interactive: false
+    cmds:
+      - |
+        terraform destroy
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_destroy: "-input=false -auto-approve"
+      TF_IN_AUTOMATION: 1
+
+  tf:plan:
+    desc: Run terraform plan
+    interactive: false
+    cmds:
+      - |
+        export TF_VAR_docker_registry_password=$(cat ./github_token.txt)
+        terraform plan
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_plan: "-input=false -out=tfplan" # https://developer.hashicorp.com/terraform/cli/config/environment-variables#tf_cli_args-and-tf_cli_args_name
+      # Doesn't work? not sure why..
+      # TF_VAR_docker_registry_password:
+      #   sh: cat ./github_token.txt
+
+
+  tf:apply:
+    desc: Run terraform apply to converge state
+    interactive: false
+    cmds:
+      - |
+        export TF_VAR_docker_registry_password=$(cat ./github_token.txt)
+        terraform apply "tfplan"
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_apply: "-input=false -auto-approve"
+      TF_IN_AUTOMATION: 1
+      TF_LOG_PATH: ./tf_logs.log
+
+
+  tf:destroy:
+    desc: Run terraform destroy to DESTROY all intrastructure
+    interactive: false
+    cmds:
+      - |
+        export TF_VAR_docker_registry_password=$(cat ./github_token.txt)
+        terraform destroy
+    env:
+      TF_LOG: "off"
+      TF_CLI_ARGS_destroy: "-input=false -auto-approve"
+      TF_IN_AUTOMATION: 1
+
+  tf:cycle:
+    desc: Run full Terraform lifecycle from init to destroy
+    cmds:
+      - task: tf:destroy
+      - task: tf:plan
+      - task: tf:apply
+
+  dkr:login:
+    desc: login to ghcr
+    cmds:
+      - echo $GH_TOKEN_SECRET | docker login ghcr.io -u 4x0v7 --password-stdin
+    env:
+      GH_TOKEN_SECRET:
+        sh: cat ./github_token.txt
+
+  prj:cycle:
+    desc: reset things
+    cmds:
+      - task: dotnet:clean
+      - task: tf:reset
+
+  tf:reset:
+    desc: reset Terraform files and re-init
+    cmds:
+      - rm -rf .terraform
+      - rm -rf modules
+      - task: tf:init
+
+  reg:login:
+    desc: Login to Google container registry
+    cmds:
+      - cat ./ctr_pusher_key_b64.txt | base64 -d  | docker login -u _json_key --password-stdin https://australia-southeast1-docker.pkg.dev
+
+  dkr:tag:
+    cmds:
+      - >
+        docker tag
+        ghcr.io/4x0v7/clutterbot-webapp:v0.0.0
+        australia-southeast1-docker.pkg.dev/maximal-relic-394118/cbot/clutterbot-webapp:v0.0.0
+
+  gcloud:get:pushtoken:
+    desc: Get a password for Docker login
+    dir: ctr_registry
+    cmds:
+      - terraform output -json | jq -r '.ctr_pusher_key.value' > ../ctr_pusher_key_b64.txt
+
+  up:
+    desc: Bring everything up
+    ignore_error: true
+    cmds:
+      - task: tf:validate
+      - task: tf:init:registry
+      - task: tf:plan:registry
+      - task: tf:apply:registry
+      - task: gcloud:get:pushtoken
+      - task: dotnet:build
+      - task: tf:init
+      - task: tf:plan
+      - task: tf:apply
+
+  dn:
+    desc: Bring everything down
+    ignore_error: true
+    cmds:
+      - task: tf:destroy
+      - task: tf:destroy:registry

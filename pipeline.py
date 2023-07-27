@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 from datetime import datetime
@@ -15,7 +16,9 @@ async def main():
 
     async with dagger.Connection(cfg) as dagger_client:
         # get reference to the local project
-        src = dagger_client.host().directory(".")
+        src = dagger_client.host().directory(
+            path=".", exclude=["modules/*", ".git/*", ".terraform/*", "ctr_registry/*"]
+        )
 
         dagger_client = dagger_client.pipeline(".NET build")
 
@@ -23,52 +26,51 @@ async def main():
         gh_token_secret = dagger_client.set_secret(
             "gh-token", os.environ["GH_TOKEN_SECRET"]
         )
-
-        dotnet_deps_install_ctr: dagger.Container = (
-            dagger_client.container()
-            .from_(base_image)
-            # mount local repository into image
-            .with_mounted_directory("/src", src)
-            # set current working directory for next commands
-            .with_workdir("/src/ClutterbotWebApp")
-            .with_entrypoint(["/bin/sh", "-c"])
-            .with_exec(["dotnet restore"])
+        glcloud_ctr_pusher_token = dagger_client.set_secret(
+            "gcloud-token",
+            base64.b64decode(os.environ["GLCLOUD_CTR_PUSHER_TOKEN"]).decode("utf-8"),
         )
 
-        # reuse the same container (with installed dependencies) for building the app
-        dotnet_build_ctr: dagger.Container = (
-            dotnet_deps_install_ctr
-            # bust the cache so build always runs
-            .with_env_variable(
-                "CACHEBUSTER", datetime.now().strftime("%m/%d/%Y, %H:%M:%S")
-            ).with_exec(["dotnet build --no-restore"])
-        )
+        webapp_deployed_tag = os.environ["WEBAPP_DEPLOYED_TAG"]
 
         # build using Dockerfile
         docker_dotnet_build_ctr: dagger.Container = src.docker_build()
 
         # define tags
-        tags = ["v0.0.0", "latest"]
+        tags = [webapp_deployed_tag, "latest"]
 
-        # Concurrent
-        #
+        # define registries
+        registries = [
+            {
+                "url": "ghcr.io",
+                "user": "4x0v7",
+                "token": gh_token_secret,
+                "image_name": "4x0v7/clutterbot-webapp",
+            },
+            {
+                "url": "australia-southeast1-docker.pkg.dev",
+                "user": "_json_key",
+                "token": glcloud_ctr_pusher_token,
+                "image_name": "maximal-relic-394118/cbot/clutterbot-webapp",
+            },
+        ]
+
         async with anyio.create_task_group() as tg:
-            # tg.start_soon(dotnet_build_ctr.stdout)
             tg.start_soon(docker_dotnet_build_ctr.export, "./image.tar") if os.getenv(
                 "LOCAL_TAR_EXPORT"
             ) not in {"0", "false"} else None
             registry_publish = os.getenv("REGISTRY_PUBLISH")
             if registry_publish not in {"0", "false"}:
 
-                async def publish_to_registry(tag):
+                async def publish_to_registry(registry, tag):
                     # use secret for registry authentication
                     await docker_dotnet_build_ctr.with_registry_auth(
-                        "ghcr.io", "4x0v7", gh_token_secret
-                    ).publish(f"ghcr.io/4x0v7/clutterbot-webapp:{tag}")
+                        registry["url"], registry["user"], registry["token"]
+                    ).publish(f"{registry['url']}/{registry['image_name']}:{tag}")
 
-                # push tags concurrently
-                for tag in tags:
-                    tg.start_soon(publish_to_registry, tag)
+                for registry in registries:
+                    for tag in tags:
+                        tg.start_soon(publish_to_registry, registry, tag)
 
 
 if __name__ == "__main__":
