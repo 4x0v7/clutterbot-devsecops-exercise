@@ -29,4 +29,8 @@ jobs:
       - name: Configure token
         run: echo "${{ secrets.GITHUB_TOKEN }}" > ./github_token.txt
       - name: Run Dagger pipeline
-        run: task dotnet:build
+        run: |
+          export GCLOUD_PUBLISH=false
+          export GH_PUBLISH=true
+          export GLCLOUD_CTR_PUSHER_TOKEN=""
+          task dotnet:build

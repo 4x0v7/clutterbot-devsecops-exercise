@@ -47,6 +47,8 @@ tasks:
     env:
       LOCAL_TAR_EXPORT: false
       REGISTRY_PUBLISH: true
+      GH_PUBLISH: true
+      GCLOUD_PUBLISH: false
       GH_TOKEN_SECRET:
         sh: cat ./github_token.txt
       GLCLOUD_CTR_PUSHER_TOKEN:

@@ -26,10 +26,6 @@ async def main():
         gh_token_secret = dagger_client.set_secret(
             "gh-token", os.environ["GH_TOKEN_SECRET"]
         )
-        glcloud_ctr_pusher_token = dagger_client.set_secret(
-            "gcloud-token",
-            base64.b64decode(os.environ["GLCLOUD_CTR_PUSHER_TOKEN"]).decode("utf-8"),
-        )
 
         webapp_deployed_tag = os.environ["WEBAPP_DEPLOYED_TAG"]
 
@@ -42,15 +38,21 @@ async def main():
         # define registries
         registries = [
             {
+                "publish": os.getenv("GH_PUBLISH"),
                 "url": "ghcr.io",
                 "user": "4x0v7",
                 "token": gh_token_secret,
                 "image_name": "4x0v7/clutterbot-webapp",
             },
             {
+                "publish": os.getenv("GCLOUD_PUBLISH"),
                 "url": "australia-southeast1-docker.pkg.dev",
                 "user": "_json_key",
-                "token": glcloud_ctr_pusher_token,
+                "token": base64.b64decode(
+                    os.environ.get("GLCLOUD_CTR_PUSHER_TOKEN", "")
+                ).decode("utf-8")
+                if os.getenv("GCLOUD_PUBLISH") not in {"0", "false"}
+                else None,
                 "image_name": "maximal-relic-394118/cbot/clutterbot-webapp",
             },
         ]
@@ -59,16 +61,14 @@ async def main():
             tg.start_soon(docker_dotnet_build_ctr.export, "./image.tar") if os.getenv(
                 "LOCAL_TAR_EXPORT"
             ) not in {"0", "false"} else None
-            registry_publish = os.getenv("REGISTRY_PUBLISH")
-            if registry_publish not in {"0", "false"}:
 
-                async def publish_to_registry(registry, tag):
-                    # use secret for registry authentication
-                    await docker_dotnet_build_ctr.with_registry_auth(
-                        registry["url"], registry["user"], registry["token"]
-                    ).publish(f"{registry['url']}/{registry['image_name']}:{tag}")
+            async def publish_to_registry(registry, tag):
+                await docker_dotnet_build_ctr.with_registry_auth(
+                    registry["url"], registry["user"], registry["token"]
+                ).publish(f"{registry['url']}/{registry['image_name']}:{tag}")
 
-                for registry in registries:
+            for registry in registries:
+                if registry["publish"] not in {"0", "false"}:
                     for tag in tags:
                         tg.start_soon(publish_to_registry, registry, tag)
 
