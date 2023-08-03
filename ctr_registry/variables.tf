@@ -11,8 +11,8 @@ variable "region" {
   default     = "australia-southeast1"
 }
 
-variable "gcloud_docker_image_name" {
-  description = "Name of the deployed gcloud Docker image"
+variable "gcp_artifcat_registry_name" {
+  description = "Name of the Artifact registry, forms part of the registry url eg. australia-southeast1-docker.pkg.dev/maximal-relic-394118/cbot/clutterbot-webapp:v0.0.1"
   type        = string
-  default     = "clutterbot-webapp:v0.0.1"
+  default     = "cbot"
 }

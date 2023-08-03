@@ -45,19 +45,6 @@
     on windows_amd64
     ```
 
-- vendir
-
-    `scoop install vendir`
-
-    Confirm vendir is installed correctly
-
-    ```powershell
-    vendir version
-    vendir version 0.34.3
-
-    Succeeded
-    ```
-
 ### Local CI/CD development prerequisites
 
 - Docker
@@ -149,13 +136,7 @@ task dotnet:run
 task cicd:deps:install
 ```
 
-## Build the .NET web app
-
-```powershell
-task dotnet:build
-```
-
-## Push the Docker image to GitHub Packages
+## Build and push the .NET web app to GitHub Packages
 
 ### Local configuration
 
@@ -167,13 +148,8 @@ Follow the [GitHub documentation](https://docs.github.com/en/packages/working-wi
 Put the token into a text file named `github_token.txt` in the root of the repository.
 This file is is ignored by the `.gitignore` file, to prevent accidentally committing it.
 
-#### Modify the Taskfile
-
-The `dotnet:build` task in the `Taskfile.yml` has 2 configurable ENV variables to control where the built Docker image is pushed.
-
-```yaml
-LOCAL_TAR_EXPORT: false
-REGISTRY_PUBLISH: true
+```powershell
+task dotnet:push:github
 ```
 
 #### Configure for a local Docker daemon
@@ -183,27 +159,25 @@ For local development, you can instead opt to export the built image as a `tar` 
 The tar file can then be loaded into a Docker daemon.
 
 ```sh
-task dotnet:build
-docker load --input image.tar
-Loaded image ID: sha256:644249ebf40a41a568fbeaeacbe81414ecd838a7f792b6c64d25a6dbf2521813
+task dotnet:build:localexport
+task dotnet:dkr:import
 ```
 
-Once the image is loaded, tag it
-
-```sh
-docker tag sha256:644249ebf40a41a568fbeaeacbe81414ecd838a7f792b6c64d25a6dbf2521813 ghcr.io/4x0v7/clutterbot-webapp:v0.0.0
-```
+This will load the exported tar image file into the Docker daemon and tag it
 
 Confirm the image was tagged successfully
 
 ```sh
 docker image ls
-REPOSITORY                         TAG       IMAGE ID       CREATED              SIZE
-ghcr.io/4x0v7/clutterbot-webapp    v0.0.0    644249ebf40a   About a minute ago   318MB
+REPOSITORY                                                                       TAG     IMAGE ID      CREATED              SIZE
+ghcr.io/4x0v7/clutterbot-webapp                                                  v0.0.1  fc996aad62a4  About a minute ago   318MB
+australia-southeast1-docker.pkg.dev/maximal-relic-394118/cbot/clutterbot-webapp  v0.0.1  fc996aad62a4  About a minute ago   318MB
 ```
 
 You can now run the image as usual
 
 ```sh
-docker run -it --rm -p 5001:80 ghcr.io/4x0v7/clutterbot-webapp:v0.0.0
+docker run -it --rm -p 5001:2772 ghcr.io/4x0v7/clutterbot-webapp:v0.0.1
 ```
+
+Browse to http://localhost:5001/ to see the web app running!
