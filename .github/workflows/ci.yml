@@ -29,4 +29,4 @@ jobs:
       - name: Configure token
         run: echo "${{ secrets.GITHUB_TOKEN }}" > ./github_token.txt
       - name: Run Dagger pipeline
-        run: task dotnet:build
+        run: task dotnet:push:github

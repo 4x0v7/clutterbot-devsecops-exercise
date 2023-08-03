@@ -4,6 +4,8 @@ version: '3'
 
 vars:
   WEBAPP_NAME: ClutterbotWebApp
+  WEBAPP_DEPLOYED_IMAGE_NAME: clutterbot-webapp
+  WEBAPP_DEPLOYED_TAG: v0.0.1
 
 tasks:
 
@@ -25,6 +27,13 @@ tasks:
     cmds:
       - dotnet run --urls=https://{{.HOST}}:5001/
 
+  dotnet:clean:
+    desc: Clean the .NET project
+    dir: '{{.WEBAPP_NAME}}'
+    cmds:
+      - dotnet clean
+      - rm -rf ./obj && rm -rf ./bin
+
   cicd:deps:install:
     desc: Install dependencies for CI/CD development
     cmds:
@@ -34,16 +43,273 @@ tasks:
   dotnet:build:
     desc: Run .NET build pipeline using Dagger
     interactive: true
+    summary: |
+      Run the Dagger pipeline passing the supplied environment variables.
+      Note that without setting a tar export or registry publish, this is actually a no-op
+      All the available ENVs are listed in this task below to demonstrate the available options
     cmds:
       - dagger run pipenv run python ./pipeline.py
     env:
-      LOCAL_TAR_EXPORT: false
-      REGISTRY_PUBLISH: true
-      GH_TOKEN_SECRET:
-        sh: cat ./github_token.txt
+      LOCAL_TAR_EXPORT: 0
+      LOCAL_TAR_IMPORT: 0
+      REGISTRY_PUBLISH: 0
+      GH_PUBLISH: 0
+      GCP_PUBLISH: 0
+      GH_TOKEN_SECRET_FILE: ./github_token.txt
+      GCP_CTR_PUSHER_TOKEN_FILE: ./ctr_pusher_key_b64.txt
+      WEBAPP_DEPLOYED_IMAGE_NAME: '{{.WEBAPP_DEPLOYED_IMAGE_NAME}}'
+      WEBAPP_DEPLOYED_TAG: '{{.WEBAPP_DEPLOYED_TAG}}'
 
-  python:fmt:
+  dotnet:build:localexport:
+    desc: Run .NET build and export to a tar file
+    interactive: true
+    cmds:
+      - dagger run pipenv run python ./pipeline.py
+    env:
+      LOCAL_TAR_EXPORT: 1
+
+  dotnet:push:gcp:
+    desc: Run .NET build and push to GCP Artifact Container registry
+    interactive: true
+    cmds:
+      - dagger run pipenv run python ./pipeline.py
+    env:
+      REGISTRY_PUBLISH: 1
+      GCP_PUBLISH: 1
+      GCP_CTR_PUSHER_TOKEN_FILE: ./ctr_pusher_key_b64.txt
+      WEBAPP_DEPLOYED_IMAGE_NAME: '{{.WEBAPP_DEPLOYED_IMAGE_NAME}}'
+      WEBAPP_DEPLOYED_TAG: '{{.WEBAPP_DEPLOYED_TAG}}'
+
+  dotnet:push:github:
+    desc: Run .NET build and push to GitHub Packages Container registry
+    interactive: true
+    cmds:
+      - dagger run pipenv run python ./pipeline.py
+    env:
+      REGISTRY_PUBLISH: 1
+      GH_PUBLISH: 1
+      GH_TOKEN_SECRET_FILE: ./github_token.txt
+      WEBAPP_DEPLOYED_IMAGE_NAME: '{{.WEBAPP_DEPLOYED_IMAGE_NAME}}'
+      WEBAPP_DEPLOYED_TAG: '{{.WEBAPP_DEPLOYED_TAG}}'
+
+  py:fmt:
     desc: Format Python code with isort & black
     cmds:
       - pipenv run isort ./pipeline.py
       - pipenv run black ./pipeline.py
+
+# Base cmd extended by others
+  tf:cmd:
+    desc: Run a Terraform command
+    dir: '{{default "." .TF_DIR}}'
+    vars:
+      CMD: '{{default "" .CMD}}'
+      TF_ARGS: '{{default "" .TF_ARGS}}'
+      TF_IN_AUTOMATION: '{{default "0" .TF_IN_AUTOMATION}}'
+    cmds:
+      - terraform {{.CMD}}
+    env:
+      TF_CLI_ARGS: '{{.TF_ARGS}}'
+      TF_IN_AUTOMATION: '{{.TF_IN_AUTOMATION}}'
+
+  tf:fmt:
+    desc: Format Terraform files
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars: {TF_DIR: '{{.ITEM}}', CMD: fmt}
+
+  tf:validate:
+    desc: Validate Terraform files
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars: {TF_DIR: '{{.ITEM}}', CMD: validate}
+
+  tf:init:
+    desc: Initialize Terraform working directories
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars:
+          TF_DIR: '{{.ITEM}}'
+          CMD: init
+
+  tf:plan:all:
+    desc: Run all Terraform plans
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars:
+          TF_DIR: '{{.ITEM}}'
+          CMD: plan
+          TF_ARGS: '-input=false -out=tfplan'
+
+  tf:apply:all:
+    desc: Run all terraform applies to converge state
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars:
+          TF_DIR: '{{.ITEM}}'
+          CMD: apply "tfplan"
+          TF_ARGS: '-input=false -auto-approve'
+          TF_IN_AUTOMATION: 1
+
+  tf:destroy:all:
+    desc: Run terraform destroy to DESTROY all intrastructure
+    interactive: true
+    cmds:
+      - for: ['ctr_registry', '.']
+        task: tf:cmd
+        vars:
+          TF_DIR: '{{.ITEM}}'
+          CMD: destroy
+          TF_ARGS: '-input=false'
+          TF_IN_AUTOMATION: 1
+
+  tf:plan:
+    desc: Run terraform plan
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: .
+          CMD: plan
+          TF_ARGS: '-input=false -out=tfplan' # https://developer.hashicorp.com/terraform/cli/config/environment-variables#tf_cli_args-and-tf_cli_args_name
+
+  tf:apply:
+    desc: Run terraform apply to converge state
+    interactive: false
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: .
+          CMD: apply "tfplan"
+          TF_ARGS: '-input=false -auto-approve'
+          TF_IN_AUTOMATION: 1
+
+  tf:destroy:
+    desc: Run terraform destroy to DESTROY all intrastructure
+    interactive: true
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: .
+          CMD: destroy
+          TF_ARGS: '-input=false'
+          TF_IN_AUTOMATION: 1
+
+  tf:plan:registry:
+    desc: Run terraform plan on registry
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: ctr_registry
+          CMD: plan
+          TF_ARGS: '-input=false -out=tfplan' # https://developer.hashicorp.com/terraform/cli/config/environment-variables#tf_cli_args-and-tf_cli_args_name
+
+  tf:apply:registry:
+    desc: Run terraform apply to converge state on registry
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: ctr_registry
+          CMD: apply "tfplan"
+          TF_ARGS: '-input=false -auto-approve'
+
+  tf:destroy:registry:
+    desc: Run terraform destroy to DESTROY all registry intrastructure
+    interactive: true
+    cmds:
+      - task: tf:cmd
+        vars:
+          TF_DIR: ctr_registry
+          CMD: destroy
+          TF_ARGS: '-input=false'
+          TF_IN_AUTOMATION: 1
+
+  tf:reset:
+    desc: Remove Terraform provider files and container pusher key
+    cmds:
+      - rm -rf .terraform
+      - cd ctr_registry && rm -rf .terraform
+      - rm -f ./ctr_pusher_key_b64.txt
+
+  prj:cycle:
+    desc: Clean .NET artifacts and reset Terraform
+    cmds:
+      - task: dotnet:clean
+      - task: tf:reset
+
+  dotnet:dkr:import:
+    desc: Import an exported Docker image tar file and tag it with both registries
+    vars:
+      IMAGE_ID:
+        sh: |
+          output=$(docker load --quiet --input ./image.tar)
+          echo $output | awk '/Loaded image ID/ {print $NF}'
+      GCP_PROJECT_ID: maximal-relic-394118
+      GCP_ARTIFCAT_REGISTRY_NAME: cbot
+    cmds:
+      - for: ['ghcr.io', 'australia-southeast1-docker.pkg.dev']
+        task: dkr:tag
+        vars:
+          SRC_IMAGE: '{{.IMAGE_ID}}'
+          DST_IMAGE: >
+            {{if eq .ITEM "ghcr.io"}}
+            {{.ITEM}}/4x0v7/{{.WEBAPP_DEPLOYED_IMAGE_NAME}}:{{.WEBAPP_DEPLOYED_TAG}}
+            {{else if eq .ITEM "australia-southeast1-docker.pkg.dev"}}
+            {{.ITEM}}/{{.GCP_PROJECT_ID}}/{{.GCP_ARTIFCAT_REGISTRY_NAME}}/{{.WEBAPP_DEPLOYED_IMAGE_NAME}}:{{.WEBAPP_DEPLOYED_TAG}}
+            {{end}}
+
+  gh:dkr:login:
+    desc: login to GitHub Packages Container registry
+    vars: {REGISTRY_URL: ghcr.io, USER: 4x0v7}
+    cmds:
+      - cat ./github_token.txt | docker login {{.REGISTRY_URL}} -u {{.USER}} --password-stdin
+
+  gcp:dkr:login:
+    desc: Login to GCP Artifact Registry
+    vars: {REGISTRY_URL: australia-southeast1-docker.pkg.dev, USER: _json_key}
+    deps:
+      - task: gcp:get:pushtoken
+    cmds:
+      - cat ./ctr_pusher_key_b64.txt | base64 -d | docker login {{.REGISTRY_URL}} -u {{.USER}} --password-stdin
+
+  gcp:get:pushtoken:
+    desc: Get a password for Docker login to GCP
+    summary: |
+      Get the GCP service account key from the Artifact Registry Terraform stack
+      This key is a base64 encoded JSON blob which has "roles/artifactregistry.writer" assigned to it
+      The key is decoded in the Dagger pipeline and used to authenticate and push the container image
+    dir: ctr_registry
+    cmds:
+      - terraform output -json | jq -r '.ctr_pusher_key.value' > ../ctr_pusher_key_b64.txt
+
+  dkr:tag:
+    desc: Tag Docker images
+    vars:
+      SRC_IMAGE: '{{default "" .SRC_IMAGE}}'
+      DST_IMAGE: '{{default "" .DST_IMAGE}}'
+    cmds:
+      - docker tag {{.SRC_IMAGE}} {{.DST_IMAGE}}
+
+  up:
+    desc: Bring everything up
+    ignore_error: true
+    cmds:
+      - task: tf:init
+      - task: tf:validate
+      - task: tf:plan:registry
+      - task: tf:apply:registry
+      - task: gcp:get:pushtoken
+      - task: dotnet:push:gcp
+      - task: tf:plan
+      - task: tf:apply
+
+  dn:
+    desc: Bring everything down
+    ignore_error: true
+    cmds:
+      - task: tf:destroy
+      - task: tf:destroy:registry

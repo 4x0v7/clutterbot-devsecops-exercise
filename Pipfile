@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 dagger-io = "==0.6.4"
+python-hcl2 = "*"
 
 [dev-packages]
 black = "*"
